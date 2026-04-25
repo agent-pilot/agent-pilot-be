@@ -1,0 +1,5 @@
+**/config.yaml
+../.idea
+*.log
+*.env
+**/**.toml

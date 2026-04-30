@@ -3,15 +3,16 @@ package auth
 import (
 	"encoding/binary"
 	"fmt"
+	"hash/fnv"
+	"net/http"
+	"net/url"
+	"strings"
+
 	"github.com/agent-pilot/agent-pilot-be/controller/auth/service"
 	"github.com/agent-pilot/agent-pilot-be/model"
 	"github.com/agent-pilot/agent-pilot-be/pkg/jwt"
 	"github.com/agent-pilot/agent-pilot-be/pkg/state"
 	"github.com/gin-gonic/gin"
-	"hash/fnv"
-	"net/http"
-	"net/url"
-	"strings"
 )
 
 type LarkAuthControllerInterface interface {
@@ -42,6 +43,14 @@ func NewLarkAuthController(appID, appSecret, redirectURI, stateSecret string,
 	}
 }
 
+// GetFeishuLogin 获取飞书 OAuth 授权地址
+// @Summary      飞书登录（返回授权链接）
+// @Description  返回 data.authUrl；query returnTo 为登录成功后回跳路径，须以 / 开头
+// @Tags         auth
+// @Produce      json
+// @Param        returnTo query string false "回跳路径" default(/)
+// @Success      200 {object} model.Response "data 内含字段 authUrl"
+// @Router       /auth/feishu/login [get]
 func (ac *LarkAuthController) GetFeishuLogin(ctx *gin.Context) (model.Response, error) {
 	returnTo := ctx.Query("returnTo")
 	if strings.TrimSpace(returnTo) == "" {
@@ -71,6 +80,14 @@ func (ac *LarkAuthController) GetFeishuLogin(ctx *gin.Context) (model.Response, 
 	}, nil
 }
 
+// FeishuCallbackGin 飞书 OAuth 回调：换 token、签发 JWT、302 回跳并附带 token
+// @Summary      飞书 OAuth 回调
+// @Tags         auth
+// @Param        code  query string true "授权码"
+// @Param        state query string true "含签名的 state"
+// @Success      302 "302 重定向到 returnTo?token=JWT"
+// @Failure      302 "失败时重定向 /?login=failed"
+// @Router       /auth/feishu/callback [get]
 func (ac *LarkAuthController) FeishuCallbackGin(ctx *gin.Context) {
 	code := ctx.Query("code")
 	sta := ctx.Query("state")
@@ -122,6 +139,14 @@ func (ac *LarkAuthController) FeishuCallbackGin(ctx *gin.Context) {
 	ctx.Redirect(http.StatusFound, target)
 }
 
+// GetMe 当前登录用户
+// @Summary      当前用户
+// @Tags         auth
+// @Produce      json
+// @Success      200 {object} model.Response
+// @Failure      401 {object} model.Response
+// @Router       /auth/me [get]
+// @Security     BearerAuth
 func (ac *LarkAuthController) GetMe(ctx *gin.Context) (model.Response, error) {
 	claims, err := ac.jwtHandler.ParseToken(ctx)
 	if err != nil {
@@ -145,6 +170,13 @@ func (ac *LarkAuthController) GetMe(ctx *gin.Context) (model.Response, error) {
 	}, nil
 }
 
+// Logout 退出登录
+// @Summary      退出登录
+// @Tags         auth
+// @Produce      json
+// @Success      200 {object} model.Response
+// @Router       /auth/logout [post]
+// @Security     BearerAuth
 func (ac *LarkAuthController) Logout(ctx *gin.Context) (model.Response, error) {
 	if err := ac.jwtHandler.ClearToken(ctx); err != nil {
 		return model.Response{}, err

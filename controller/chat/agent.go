@@ -9,7 +9,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/agent-pilot/agent-pilot-be/agent/memory"
 	agentplan "github.com/agent-pilot/agent-pilot-be/agent/plan"
 	"github.com/agent-pilot/agent-pilot-be/agent/react"
 	"github.com/cloudwego/eino/adk"
@@ -30,7 +29,7 @@ type ControllerInterface interface {
 }
 
 type Controller struct {
-	Mem          map[string]memory.Memory
+	//Mem          map[string]memory.MemoryService
 	Agent        adk.Agent
 	SkillReg     *skill.Registry
 	SystemMsg    string
@@ -66,6 +65,16 @@ func NewController(
 }
 
 // Chat 处理流式聊天请求
+// @Summary      流式对话（SSE）
+// @Description  Server-Sent Events：event:message / event:done / event:error
+// @Tags         chat
+// @Accept       json
+// @Produce      text/event-stream
+// @Param body body request true "用户输入"
+// @Success      200   {string}  string      "SSE 流"
+// @Failure      400   {object}  model.Response
+// @Router       /chat/stream [post]
+// @Security     BearerAuth
 func (c *Controller) Chat(ctx *gin.Context) {
 	var req request
 	if err := ctx.ShouldBindJSON(&req); err != nil {
@@ -102,6 +111,17 @@ func (c *Controller) Chat(ctx *gin.Context) {
 	c.streamFromEvents(ctx, events, "mock", history)
 }
 
+// Plan 生成执行计划
+// @Summary      生成 Plan
+// @Tags         chat
+// @Accept       json
+// @Produce      json
+// @Param        body body request true "用户输入（message 必填）"
+// @Success      200   {object}  model.Response "data.plan / data.checkpoint_id"
+// @Failure      400   {object}  model.Response
+// @Failure      500   {object}  model.Response
+// @Router       /chat/plan [post]
+// @Security     BearerAuth
 func (c *Controller) Plan(ctx *gin.Context) {
 	var req request
 	if err := ctx.ShouldBindJSON(&req); err != nil {
@@ -170,6 +190,17 @@ func (c *Controller) Plan(ctx *gin.Context) {
 	})
 }
 
+// Execute 按 Plan 执行（ReAct）
+// @Summary      执行 Plan
+// @Tags         chat
+// @Accept       json
+// @Produce      json
+// @Param        body body request true "checkpoint_id 或 message（二选一逻辑见实现）"
+// @Success      200   {object}  model.Response
+// @Failure      400   {object}  model.Response
+// @Failure      500   {object}  model.Response
+// @Router       /chat/execute [post]
+// @Security     BearerAuth
 func (c *Controller) Execute(ctx *gin.Context) {
 	var req request
 	if err := ctx.ShouldBindJSON(&req); err != nil {
@@ -384,29 +415,29 @@ func (c *Controller) getHistory(sessionID string) []*schema.Message {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if c.Mem == nil {
-		c.Mem = make(map[string]memory.Memory)
-	}
+	//if c.Mem == nil {
+	//	c.Mem = make(map[string]memory.Memory)
+	//}
 
-	h, ok := c.Mem[sessionID]
-	if !ok {
-		h = []*schema.Message{
-			schema.SystemMessage(c.SystemMsg),
-		}
-		c.Mem[sessionID] = h
-	}
-	return h
+	//h, ok := c.Mem[sessionID]
+	//if !ok {
+	//	h = []*schema.Message{
+	//		schema.SystemMessage(c.SystemMsg),
+	//	}
+	//	c.Mem[sessionID] = h
+	//}
+	return nil
 }
 
 func (c *Controller) saveHistory(sessionID string, history []*schema.Message) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	// 这里肯定需要优化
-	if len(history) > 20 {
-		system := history[0]
-		history = append([]*schema.Message{system}, history[len(history)-19:]...)
-	}
-
-	c.Mem[sessionID] = history
+	//// 这里肯定需要优化
+	//if len(history) > 20 {
+	//	system := history[0]
+	//	history = append([]*schema.Message{system}, history[len(history)-19:]...)
+	//}
+	//
+	//c.Mem[sessionID] = history
 }

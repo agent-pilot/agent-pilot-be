@@ -1,0 +1,192 @@
+definitions:
+  chat.request:
+    properties:
+      checkpoint_id:
+        type: string
+      message:
+        type: string
+    type: object
+  model.Response:
+    properties:
+      code:
+        type: integer
+      data: {}
+      message:
+        type: string
+    type: object
+info:
+  contact: {}
+paths:
+  /auth/feishu/callback:
+    get:
+      parameters:
+      - description: 授权码
+        in: query
+        name: code
+        required: true
+        type: string
+      - description: 含签名的 state
+        in: query
+        name: state
+        required: true
+        type: string
+      responses:
+        "302":
+          description: 失败时重定向 /?login=failed
+      summary: 飞书 OAuth 回调
+      tags:
+      - auth
+  /auth/feishu/login:
+    get:
+      description: 返回 data.authUrl；query returnTo 为登录成功后回跳路径，须以 / 开头
+      parameters:
+      - default: /
+        description: 回跳路径
+        in: query
+        name: returnTo
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: data 内含字段 authUrl
+          schema:
+            $ref: '#/definitions/model.Response'
+      summary: 飞书登录（返回授权链接）
+      tags:
+      - auth
+  /auth/logout:
+    post:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.Response'
+      security:
+      - BearerAuth: []
+      summary: 退出登录
+      tags:
+      - auth
+  /auth/me:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/model.Response'
+      security:
+      - BearerAuth: []
+      summary: 当前用户
+      tags:
+      - auth
+  /chat/execute:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: checkpoint_id 或 message（二选一逻辑见实现）
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/chat.request'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/model.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/model.Response'
+      security:
+      - BearerAuth: []
+      summary: 执行 Plan
+      tags:
+      - chat
+  /chat/plan:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 用户输入（message 必填）
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/chat.request'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: data.plan / data.checkpoint_id
+          schema:
+            $ref: '#/definitions/model.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/model.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/model.Response'
+      security:
+      - BearerAuth: []
+      summary: 生成 Plan
+      tags:
+      - chat
+  /chat/stream:
+    post:
+      consumes:
+      - application/json
+      description: Server-Sent Events：event:message / event:done / event:error
+      parameters:
+      - description: 用户输入
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/chat.request'
+      produces:
+      - text/event-stream
+      responses:
+        "200":
+          description: SSE 流
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/model.Response'
+      security:
+      - BearerAuth: []
+      summary: 流式对话（SSE）
+      tags:
+      - chat
+  /health:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.Response'
+      summary: 健康检查
+      tags:
+      - system
+swagger: "2.0"

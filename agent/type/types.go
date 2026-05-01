@@ -1,7 +1,6 @@
 package atype
 
 import (
-	"context"
 	"time"
 
 	"github.com/cloudwego/eino/schema"
@@ -96,6 +95,16 @@ type Request struct {
 	History   []*schema.Message
 }
 
-type Planner interface {
-	Plan(ctx context.Context, req Request) (*Plan, error)
+type Result struct {
+	Plan    *Plan        `json:"plan"`
+	Steps   []StepResult `json:"steps"`
+	Summary string       `json:"summary"`
+}
+
+type StepResult struct {
+	StepID    string     `json:"step_id"`
+	Output    string     `json:"output"`
+	Paused    bool       `json:"paused"`
+	Completed bool       `json:"completed"`
+	Messages  []*Message `json:"messages"`
 }

@@ -20,6 +20,7 @@ type AgentDao interface {
 	CleanActivePlan(ctx context.Context, planID string) error
 	InsertPlan(ctx context.Context, p *atype.Plan) error
 	GetPlan(ctx context.Context, planID string) (*atype.Plan, error)
+	ListPlansBySession(ctx context.Context, sessionID string, limit int) ([]atype.Plan, error)
 	UpdatePlanStatus(ctx context.Context, planID string, status atype.Status) error
 	ReplacePlan(ctx context.Context, p *atype.Plan) error
 
@@ -30,7 +31,7 @@ type AgentDao interface {
 	SaveCheckpoint(ctx context.Context, planID string, checkpoint *atype.Checkpoint) error
 	ClearCheckpoint(ctx context.Context, planID string) error
 
-	AppendMessage(ctx context.Context, msg *atype.Message) error
+	AppendMessage(ctx context.Context, msg []*atype.Message) error
 	GetPlanMessages(ctx context.Context, planID string) ([]atype.Message, error)
 	GetStepMessages(ctx context.Context, planID string, stepID string) ([]atype.Message, error)
 }
@@ -121,6 +122,40 @@ func (ad *agentDao) GetPlan(ctx context.Context, planID string) (*atype.Plan, er
 		return nil, err
 	}
 	return planFromModel(&r), nil
+}
+
+func (ad *agentDao) ListPlansBySession(ctx context.Context, sessionID string, limit int) ([]atype.Plan, error) {
+	if sessionID == "" {
+		return nil, nil
+	}
+	if limit <= 0 {
+		limit = 5
+	}
+	cur, err := ad.planCol.Find(
+		ctx,
+		bson.M{"session_id": sessionID},
+		options.Find().
+			SetSort(bson.D{{Key: "updated_at", Value: -1}}).
+			SetLimit(int64(limit)),
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer cur.Close(ctx)
+
+	out := make([]atype.Plan, 0, limit)
+	for cur.Next(ctx) {
+		var r model.Plan
+		if err := cur.Decode(&r); err != nil {
+			return nil, err
+		}
+		p := planFromModel(&r)
+		if p == nil {
+			continue
+		}
+		out = append(out, *p)
+	}
+	return out, cur.Err()
 }
 
 func (ad *agentDao) UpdatePlanStatus(ctx context.Context, planID string, status atype.Status) error {
@@ -218,18 +253,25 @@ func (ad *agentDao) ClearCheckpoint(ctx context.Context, planID string) error {
 	return err
 }
 
-func (ad *agentDao) AppendMessage(ctx context.Context, msg *atype.Message) error {
-	if msg == nil {
+func (ad *agentDao) AppendMessage(ctx context.Context, messages []*atype.Message) error {
+	if len(messages) == 0 {
 		return nil
 	}
-	if msg.ID == "" {
-		msg.ID = uuid.New().String()
+	var docs []any
+	for _, msg := range messages {
+		if msg == nil {
+			continue
+		}
+		if msg.ID == "" {
+			msg.ID = uuid.New().String()
+		}
+		if msg.CreatedAt.IsZero() {
+			msg.CreatedAt = time.Now()
+		}
+		docs = append(docs, agentMessageFromPlan(msg))
 	}
-	if msg.CreatedAt.IsZero() {
-		msg.CreatedAt = time.Now()
-	}
-	am := agentMessageFromPlan(msg)
-	_, err := ad.messageCol.InsertOne(ctx, am)
+
+	_, err := ad.messageCol.InsertMany(ctx, docs)
 	return err
 }
 

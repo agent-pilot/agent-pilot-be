@@ -17,32 +17,28 @@ type MemoryService interface {
 	CreatePlan(ctx context.Context, chatSessionID, goal string) (*atype.Plan, error)
 	SavePlan(ctx context.Context, p *atype.Plan) error
 	UpdatePlanStatus(ctx context.Context, planID string, status atype.Status) error
+	ListSessionPlans(ctx context.Context, sessionID string, limit int) ([]atype.Plan, error)
 
 	StartStep(ctx context.Context, planID string, stepID string) error
 	CompleteStep(ctx context.Context, planID, stepID, result string) error
 	FailStep(ctx context.Context, planID, stepID string) error
 
 	PausePlan(ctx context.Context, planID, stepID, question string) error
-	ResumePlan(ctx context.Context, planID string) (*ResumeContext, error)
+	ResumePlan(ctx context.Context, planID string) error
 
-	AppendMessage(ctx context.Context, msg *atype.Message) error
+	AppendMessage(ctx context.Context, msg []*atype.Message) error
 	GetPlanMessages(ctx context.Context, planID string) ([]atype.Message, error)
 	GetStepMessages(ctx context.Context, planID, stepID string) ([]atype.Message, error)
 
-	BuildStepContext(ctx context.Context, planID, stepID string) (*StepContext, error)
+	BuildExecutionContext(ctx context.Context, planID string) (*ExecutionContext, error)
 }
 
-type StepContext struct {
-	Plan     *atype.Plan
-	Step     atype.Step
-	Messages []atype.Message
-}
-
-type ResumeContext struct {
+type ExecutionContext struct {
 	Plan       *atype.Plan
 	Step       *atype.Step
-	Checkpoint *atype.Checkpoint
 	Messages   []atype.Message
+	Checkpoint *atype.Checkpoint
+	IsResume   bool
 }
 
 type memoryService struct {
@@ -104,6 +100,10 @@ func (s *memoryService) SavePlan(ctx context.Context, p *atype.Plan) error {
 
 func (s *memoryService) UpdatePlanStatus(ctx context.Context, planID string, status atype.Status) error {
 	return s.dao.UpdatePlanStatus(ctx, planID, status)
+}
+
+func (s *memoryService) ListSessionPlans(ctx context.Context, sessionID string, limit int) ([]atype.Plan, error) {
+	return s.dao.ListPlansBySession(ctx, sessionID, limit)
 }
 
 func (s *memoryService) StartStep(ctx context.Context, planID, stepID string) error {
@@ -187,61 +187,45 @@ func (s *memoryService) PausePlan(ctx context.Context, planID, stepID, question 
 	})
 }
 
-func (s *memoryService) ResumePlan(ctx context.Context, planID string) (*ResumeContext, error) {
-
+func (s *memoryService) ResumePlan(ctx context.Context, planID string) error {
 	plan, err := s.dao.GetPlan(ctx, planID)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	if plan.Checkpoint == nil {
-		return nil, errors.New("checkpoint not found")
+		return errors.New("checkpoint not found")
 	}
 	stepID := plan.Checkpoint.StepID
-	var step *atype.Step
-	for i := range plan.Steps {
-		if plan.Steps[i].ID == stepID {
-			step = &plan.Steps[i]
-			break
-		}
-	}
+	step := s.getStep(plan.Steps, stepID)
 	if step == nil {
-		return nil, errors.New("step not found")
-	}
-	msgs, err := s.dao.GetStepMessages(ctx, planID, stepID)
-	if err != nil {
-		return nil, err
+		return errors.New("step not found")
 	}
 
 	//恢复状态
 	err = s.dao.UpdatePlanStatus(ctx, planID, atype.StatusExecuting)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	err = s.dao.UpdateStepStatus(ctx, planID, stepID, atype.StepStatusRunning)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	err = s.dao.UpdateCurrentStepID(ctx, planID, stepID)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	//清除checkpoint
 	err = s.dao.ClearCheckpoint(ctx, planID)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	return &ResumeContext{
-		Plan:       plan,
-		Step:       step,
-		Checkpoint: plan.Checkpoint,
-		Messages:   msgs,
-	}, nil
+	return nil
 }
 
-func (s *memoryService) AppendMessage(ctx context.Context, msg *atype.Message) error {
+func (s *memoryService) AppendMessage(ctx context.Context, msg []*atype.Message) error {
 	return s.dao.AppendMessage(ctx, msg)
 }
 
@@ -253,23 +237,31 @@ func (s *memoryService) GetStepMessages(ctx context.Context, planID, stepID stri
 	return s.dao.GetStepMessages(ctx, planID, stepID)
 }
 
-func (s *memoryService) BuildStepContext(ctx context.Context, planID, stepID string) (*StepContext, error) {
+func (s *memoryService) BuildExecutionContext(ctx context.Context, planID string) (*ExecutionContext, error) {
 	p, err := s.dao.GetPlan(ctx, planID)
 	if err != nil {
 		return nil, err
 	}
-	var st atype.Step
-	for i := range p.Steps {
-		if p.Steps[i].ID == stepID {
-			st = p.Steps[i]
-			break
-		}
+	if p.CurrentStepID == "" {
+		return nil, errors.New("current step not set")
 	}
-	msgs, err := s.dao.GetStepMessages(ctx, planID, stepID)
+
+	step := s.getStep(p.Steps, p.CurrentStepID)
+	if step == nil {
+		return nil, errors.New("step not found")
+	}
+
+	msgs, err := s.dao.GetStepMessages(ctx, planID, step.ID)
 	if err != nil {
 		return nil, err
 	}
-	return &StepContext{Plan: p, Step: st, Messages: msgs}, nil
+	return &ExecutionContext{
+		Plan:       p,
+		Step:       step,
+		Messages:   msgs,
+		Checkpoint: p.Checkpoint,
+		IsResume:   p.Checkpoint != nil,
+	}, nil
 }
 
 func (s *memoryService) findNextStep(steps []atype.Step, currentStepID string) *atype.Step {
@@ -282,4 +274,15 @@ func (s *memoryService) findNextStep(steps []atype.Step, currentStepID string) *
 		}
 	}
 	return nil
+}
+
+func (s *memoryService) getStep(steps []atype.Step, stepID string) *atype.Step {
+	var step *atype.Step
+	for i := range steps {
+		if steps[i].ID == stepID {
+			step = &steps[i]
+			break
+		}
+	}
+	return step
 }

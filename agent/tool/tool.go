@@ -11,5 +11,7 @@ func BuildTools(reg *skill.Registry) []einotool.BaseTool {
 		&LoadSkillTool{Reg: reg},
 		&LoadSkillReferencesTool{Reg: reg},
 		&ShellTool{},
+		&InterruptTool{},
+		&FinishTool{},
 	}
 }

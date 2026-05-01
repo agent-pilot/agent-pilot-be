@@ -8,9 +8,14 @@ import (
 	"time"
 
 	"github.com/agent-pilot/agent-pilot-be/agent/tool/skill"
+	atype "github.com/agent-pilot/agent-pilot-be/agent/type"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 )
+
+type Planner interface {
+	Plan(ctx context.Context, req atype.Request) (*atype.Plan, error)
+}
 
 type LLMPlanner struct {
 	model  model.ToolCallingChatModel
@@ -31,7 +36,7 @@ func NewLLMPlanner(chatModel model.ToolCallingChatModel, skillReg *skill.Registr
 	}
 }
 
-func (p *LLMPlanner) Plan(ctx context.Context, req Request) (*Plan, error) {
+func (p *LLMPlanner) Plan(ctx context.Context, req atype.Request) (*atype.Plan, error) {
 	if p == nil || p.model == nil {
 		return nil, fmt.Errorf("planner model is nil")
 	}
@@ -58,31 +63,18 @@ func (p *LLMPlanner) Plan(ctx context.Context, req Request) (*Plan, error) {
 	}
 
 	now := p.now()
-	plan := &Plan{
-		ID:              NewID("plan"),
-		SessionID:       req.SessionID,
-		Objective:       strings.TrimSpace(out.Objective),
-		Summary:         strings.TrimSpace(out.Summary),
-		SubjectiveState: out.SubjectiveState,
-		Assumptions:     compactStrings(out.Assumptions),
-		Constraints:     compactStrings(out.Constraints),
-		Steps:           normalizeSteps(out.Steps),
-		Status:          StatusReady,
-		CreatedAt:       now,
-		UpdatedAt:       now,
+	plan := &atype.Plan{
+		ID:        NewID("plan"),
+		SessionID: req.SessionID,
+		Goal:      strings.TrimSpace(out.Goal),
+		Steps:     normalizeSteps(out.Steps),
+		Status:    atype.StatusReady,
+		CreatedAt: now,
+		UpdatedAt: now,
 	}
 
-	if plan.Objective == "" {
-		plan.Objective = strings.TrimSpace(req.UserInput)
-	}
-	if plan.Summary == "" {
-		plan.Summary = "Plan generated from user request."
-	}
-	if plan.SubjectiveState.Goal == "" {
-		plan.SubjectiveState.Goal = plan.Objective
-	}
-	if plan.SubjectiveState.Stance == "" {
-		plan.SubjectiveState.Stance = "proactive, careful, and checkpoint-aware"
+	if strings.TrimSpace(plan.Goal) == "" {
+		plan.Goal = strings.TrimSpace(req.UserInput)
 	}
 
 	return plan, nil
@@ -92,37 +84,22 @@ func (p *LLMPlanner) systemPrompt() string {
 	var sb strings.Builder
 	sb.WriteString(`You are the planning layer for a plan-execute agent.
 
-Create a compact, executable plan before any action is taken. The executor will later use ReAct and skill tools, so your job is to decide intent, subjective stance, skill choices, dependencies, and checkpoints.
+Create a compact, executable plan before any action is taken. The executor will later use ReAct and skill tools, so your job is to decide intent, skill choices, and a practical step breakdown.
 
 Rules:
 - Return JSON only. No markdown fences.
 - Do not execute tools.
 - Prefer available skills when they match a step.
 - A step should be small enough for one ReAct execution loop.
-- Use clarifying_needs only for missing information that blocks safe planning.
 - Keep plans practical and short unless the user asks for a broad project.
 
 Required JSON shape:
 {
-  "objective": "string",
-  "summary": "string",
-  "subjective_state": {
-    "goal": "string",
-    "stance": "string",
-    "preferences": ["string"],
-    "risk_awareness": ["string"],
-    "clarifying_needs": ["string"]
-  },
-  "assumptions": ["string"],
-  "constraints": ["string"],
+  "goal": "string",
   "steps": [
     {
       "title": "string",
-      "purpose": "string",
-      "expected_outcome": "string",
-      "skill": "optional skill name",
-      "inputs": {"key": "value"},
-      "dependencies": ["step id or title"]
+      "description": "string"
     }
   ]
 }
@@ -150,7 +127,7 @@ Available skills:
 	return sb.String()
 }
 
-func (p *LLMPlanner) userPrompt(req Request) string {
+func (p *LLMPlanner) userPrompt(req atype.Request) string {
 	var sb strings.Builder
 	sb.WriteString("User request:\n")
 	sb.WriteString(req.UserInput)
@@ -171,12 +148,13 @@ func (p *LLMPlanner) userPrompt(req Request) string {
 }
 
 type plannerOutput struct {
-	Objective       string          `json:"objective"`
-	Summary         string          `json:"summary"`
-	SubjectiveState SubjectiveState `json:"subjective_state"`
-	Assumptions     []string        `json:"assumptions"`
-	Constraints     []string        `json:"constraints"`
-	Steps           []Step          `json:"steps"`
+	Goal  string       `json:"goal"`
+	Steps []outputStep `json:"steps"`
+}
+
+type outputStep struct {
+	Title       string `json:"title"`
+	Description string `json:"description"`
 }
 
 func parseOutput(content string) (*plannerOutput, error) {
@@ -199,38 +177,20 @@ func parseOutput(content string) (*plannerOutput, error) {
 	return &out, nil
 }
 
-func normalizeSteps(steps []Step) []Step {
-	out := make([]Step, 0, len(steps))
+func normalizeSteps(steps []outputStep) []atype.Step {
+	out := make([]atype.Step, 0, len(steps))
 	for i, step := range steps {
-		step.Title = strings.TrimSpace(step.Title)
-		step.Purpose = strings.TrimSpace(step.Purpose)
-		step.ExpectedOutcome = strings.TrimSpace(step.ExpectedOutcome)
-		step.Skill = strings.TrimSpace(step.Skill)
-		step.Dependencies = compactStrings(step.Dependencies)
-		if step.Inputs == nil {
-			step.Inputs = map[string]string{}
+		title := strings.TrimSpace(step.Title)
+		desc := strings.TrimSpace(step.Description)
+		if title == "" {
+			title = fmt.Sprintf("Step %d", i+1)
 		}
-		if step.ID == "" {
-			step.ID = fmt.Sprintf("step_%02d", i+1)
-		}
-		if step.Status == "" {
-			step.Status = StepStatusPending
-		}
-		if step.Title == "" {
-			step.Title = fmt.Sprintf("Step %d", i+1)
-		}
-		out = append(out, step)
-	}
-	return out
-}
-
-func compactStrings(in []string) []string {
-	out := make([]string, 0, len(in))
-	for _, item := range in {
-		item = strings.TrimSpace(item)
-		if item != "" {
-			out = append(out, item)
-		}
+		out = append(out, atype.Step{
+			ID:          fmt.Sprintf("step_%02d", i+1),
+			Title:       title,
+			Description: desc,
+			Status:      atype.StepStatusPending,
+		})
 	}
 	return out
 }

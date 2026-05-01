@@ -11,6 +11,7 @@ import (
 
 	agentplan "github.com/agent-pilot/agent-pilot-be/agent/plan"
 	"github.com/agent-pilot/agent-pilot-be/agent/react"
+	atype "github.com/agent-pilot/agent-pilot-be/agent/type"
 	"github.com/cloudwego/eino/adk"
 	einomodel "github.com/cloudwego/eino/components/model"
 	einotool "github.com/cloudwego/eino/components/tool"
@@ -152,7 +153,7 @@ func (c *Controller) Plan(ctx *gin.Context) {
 
 	sessionID := "mock"
 	history := c.getHistory(sessionID)
-	p, err := c.Planner.Plan(ctx.Request.Context(), agentplan.Request{
+	p, err := c.Planner.Plan(ctx.Request.Context(), atype.Request{
 		SessionID: sessionID,
 		UserInput: req.Message,
 		History:   history,
@@ -248,7 +249,7 @@ func (c *Controller) Execute(ctx *gin.Context) {
 	})
 }
 
-func (c *Controller) planForExecution(ctx *gin.Context, req request) (*agentplan.Plan, error) {
+func (c *Controller) planForExecution(ctx *gin.Context, req request) (*atype.Plan, error) {
 	if req.CheckpointID != "" {
 		if c.Checkpointer == nil {
 			return nil, fmt.Errorf("checkpointer is not configured")
@@ -268,7 +269,7 @@ func (c *Controller) planForExecution(ctx *gin.Context, req request) (*agentplan
 	}
 
 	sessionID := "mock"
-	return c.Planner.Plan(ctx.Request.Context(), agentplan.Request{
+	return c.Planner.Plan(ctx.Request.Context(), atype.Request{
 		SessionID: sessionID,
 		UserInput: req.Message,
 		History:   c.getHistory(sessionID),

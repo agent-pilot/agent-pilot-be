@@ -5,18 +5,20 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	atype "github.com/agent-pilot/agent-pilot-be/agent/type"
 )
 
 type Checkpoint struct {
 	ID        string    `json:"id"`
-	Plan      *Plan     `json:"plan"`
+	Plan      *atype.Plan `json:"plan"`
 	StepID    string    `json:"step_id,omitempty"`
 	Reason    string    `json:"reason"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
 type Checkpointer interface {
-	Save(ctx context.Context, plan *Plan, reason string) (*Checkpoint, error)
+	Save(ctx context.Context, plan *atype.Plan, reason string) (*Checkpoint, error)
 	Load(ctx context.Context, id string) (*Checkpoint, error)
 	Latest(ctx context.Context, sessionID string) (*Checkpoint, error)
 }
@@ -36,11 +38,11 @@ func NewMemoryCheckpointer() *MemoryCheckpointer {
 	}
 }
 
-func (c *MemoryCheckpointer) Save(ctx context.Context, plan *Plan, reason string) (*Checkpoint, error) {
+func (c *MemoryCheckpointer) Save(ctx context.Context, plan *atype.Plan, reason string) (*Checkpoint, error) {
 	return c.SaveStep(ctx, plan, "", reason)
 }
 
-func (c *MemoryCheckpointer) SaveStep(ctx context.Context, plan *Plan, stepID, reason string) (*Checkpoint, error) {
+func (c *MemoryCheckpointer) SaveStep(ctx context.Context, plan *atype.Plan, stepID, reason string) (*Checkpoint, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -116,26 +118,11 @@ func cloneCheckpoint(cp *Checkpoint) *Checkpoint {
 	}
 }
 
-func clonePlan(in *Plan) *Plan {
+func clonePlan(in *atype.Plan) *atype.Plan {
 	if in == nil {
 		return nil
 	}
 	out := *in
-	out.Assumptions = append([]string(nil), in.Assumptions...)
-	out.Constraints = append([]string(nil), in.Constraints...)
-	out.SubjectiveState.Preferences = append([]string(nil), in.SubjectiveState.Preferences...)
-	out.SubjectiveState.RiskAwareness = append([]string(nil), in.SubjectiveState.RiskAwareness...)
-	out.SubjectiveState.ClarifyingNeeds = append([]string(nil), in.SubjectiveState.ClarifyingNeeds...)
-	out.Steps = make([]Step, len(in.Steps))
-	for i, step := range in.Steps {
-		out.Steps[i] = step
-		out.Steps[i].Dependencies = append([]string(nil), step.Dependencies...)
-		if step.Inputs != nil {
-			out.Steps[i].Inputs = make(map[string]string, len(step.Inputs))
-			for k, v := range step.Inputs {
-				out.Steps[i].Inputs[k] = v
-			}
-		}
-	}
+	out.Steps = append([]atype.Step(nil), in.Steps...)
 	return &out
 }

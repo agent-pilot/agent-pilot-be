@@ -26,7 +26,6 @@ func planFromModel(r *model.Plan) *atype.Plan {
 		Steps:         steps,
 		Status:        atype.Status(r.Status),
 		CurrentStepID: r.CurrentStepID,
-		Checkpoint:    checkpointFromModel(r.Checkpoint),
 		CreatedAt:     r.CreatedAt,
 		UpdatedAt:     r.UpdatedAt,
 	}
@@ -65,7 +64,6 @@ func modelFromPlan(p *atype.Plan) *model.Plan {
 		Steps:         steps,
 		Status:        string(p.Status),
 		CurrentStepID: p.CurrentStepID,
-		Checkpoint:    modelCheckpointFromPlan(p.Checkpoint),
 		CreatedAt:     p.CreatedAt,
 		UpdatedAt:     p.UpdatedAt,
 	}

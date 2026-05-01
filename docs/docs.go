@@ -127,13 +127,14 @@ const docTemplate = `{
                 }
             }
         },
-        "/chat/execute": {
+        "/chat/session": {
             "post": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
+                "description": "创建新对话",
                 "consumes": [
                     "application/json"
                 ],
@@ -143,21 +144,20 @@ const docTemplate = `{
                 "tags": [
                     "chat"
                 ],
-                "summary": "执行 Plan",
+                "summary": "创建新对话",
                 "parameters": [
                     {
-                        "description": "checkpoint_id 或 message（二选一逻辑见实现）",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/chat.request"
-                        }
+                        "type": "string",
+                        "default": "Bearer",
+                        "description": "Bearer Token",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "data.message",
                         "schema": {
                             "$ref": "#/definitions/model.Response"
                         }
@@ -177,13 +177,14 @@ const docTemplate = `{
                 }
             }
         },
-        "/chat/plan": {
+        "/chat/sync": {
             "post": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
+                "description": "普通HTTP响应，不使用SSE",
                 "consumes": [
                     "application/json"
                 ],
@@ -193,58 +194,7 @@ const docTemplate = `{
                 "tags": [
                     "chat"
                 ],
-                "summary": "生成 Plan",
-                "parameters": [
-                    {
-                        "description": "用户输入（message 必填）",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/chat.request"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "data.plan / data.checkpoint_id",
-                        "schema": {
-                            "$ref": "#/definitions/model.Response"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/model.Response"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/model.Response"
-                        }
-                    }
-                }
-            }
-        },
-        "/chat/stream": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Server-Sent Events：event:message / event:done / event:error",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "text/event-stream"
-                ],
-                "tags": [
-                    "chat"
-                ],
-                "summary": "流式对话（SSE）",
+                "summary": "非流式对话",
                 "parameters": [
                     {
                         "description": "用户输入",
@@ -258,13 +208,19 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "SSE 流",
+                        "description": "data.message",
                         "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/model.Response"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/model.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/model.Response"
                         }
@@ -296,10 +252,10 @@ const docTemplate = `{
         "chat.request": {
             "type": "object",
             "properties": {
-                "checkpoint_id": {
+                "message": {
                     "type": "string"
                 },
-                "message": {
+                "session_id": {
                     "type": "string"
                 }
             }

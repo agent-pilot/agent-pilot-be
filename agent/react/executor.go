@@ -22,13 +22,13 @@ type Executor struct {
 	tools          []einotool.BaseTool
 	maxTurns       int
 	now            func() time.Time
-	contextBuilder context2.Builder
+	contextBuilder *context2.Builder
 }
 
 func NewExecutor(
 	model einomodel.ToolCallingChatModel,
 	tools []einotool.BaseTool,
-	contextBuilder context2.Builder,
+	contextBuilder *context2.Builder,
 ) *Executor {
 	return &Executor{
 		model:          model,
@@ -98,7 +98,7 @@ func (e *Executor) ExecuteStep(ctx context.Context, exeCtx *memory.ExecutionCont
 					PlanID:    exeCtx.Plan.ID,
 					StepID:    exeCtx.Step.ID,
 					Role:      atype.RoleToolCall,
-					Content:   "",
+					Content:   fmt.Sprintf("tool_name:%s,arguments:%s", call.Function.Name, call.Function.Arguments),
 					Metadata: map[string]any{
 						"tool_name": call.Function.Name,
 						"call_id":   call.ID,

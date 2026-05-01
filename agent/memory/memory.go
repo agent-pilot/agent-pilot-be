@@ -20,7 +20,7 @@ type MemoryService interface {
 	ListSessionPlans(ctx context.Context, sessionID string, limit int) ([]atype.Plan, error)
 
 	StartStep(ctx context.Context, planID string, stepID string) error
-	CompleteStep(ctx context.Context, planID, stepID, result string) error
+	CompleteStep(ctx context.Context, planID, stepID, result string) (bool, error)
 	FailStep(ctx context.Context, planID, stepID string) error
 
 	PausePlan(ctx context.Context, planID, stepID, question string) error
@@ -123,37 +123,32 @@ func (s *memoryService) StartStep(ctx context.Context, planID, stepID string) er
 	return s.dao.UpdatePlanStatus(ctx, planID, atype.StatusExecuting)
 }
 
-func (s *memoryService) CompleteStep(ctx context.Context, planID, stepID, result string) error {
+func (s *memoryService) CompleteStep(ctx context.Context, planID, stepID, result string) (bool, error) {
 	//更新状态
 	if err := s.dao.UpdateStepResult(ctx, planID, stepID, result); err != nil {
-		return err
+		return false, err
 	}
 	err := s.dao.UpdateStepStatus(ctx, planID, stepID, atype.StepStatusCompleted)
 	if err != nil {
-		return err
+		return false, err
 	}
 	//清除checkpoint
 	err = s.dao.ClearCheckpoint(ctx, planID)
 	if err != nil {
-		return err
+		return false, err
 	}
 	plan, err := s.dao.GetPlan(ctx, planID)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if s.findNextStep(plan.Steps, stepID) == nil {
-		return s.dao.UpdatePlanStatus(ctx, planID, atype.StatusCompleted)
-	}
-
-	nextStep := s.findNextStep(plan.Steps, stepID)
-	if nextStep == nil {
 		err := s.dao.UpdatePlanStatus(ctx, planID, atype.StatusCompleted)
 		if err != nil {
-			return err
+			return true, err
 		}
-		return nil
+		return true, nil
 	}
-	return nil
+	return false, nil
 }
 
 func (s *memoryService) FailStep(ctx context.Context, planID, stepID string) error {

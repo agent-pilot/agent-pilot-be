@@ -11,9 +11,11 @@ import (
 type Action string
 
 const (
-	ActionPlan    Action = "plan"
-	ActionExecute Action = "execute"
-	ActionResume  Action = "resume"
+	ActionPlan     Action = "plan"
+	ActionExecute  Action = "execute"
+	ActionResume   Action = "resume"
+	ActionComplete Action = "complete"
+	ActionPause    Action = "pause"
 )
 
 type Decision struct {

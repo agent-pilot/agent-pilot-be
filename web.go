@@ -3,8 +3,13 @@ package main
 import (
 	"context"
 
+	agentcontext "github.com/agent-pilot/agent-pilot-be/agent/context"
+	"github.com/agent-pilot/agent-pilot-be/agent/graph"
+	"github.com/agent-pilot/agent-pilot-be/agent/graph/nodes"
+	"github.com/agent-pilot/agent-pilot-be/agent/memory"
 	agentplan "github.com/agent-pilot/agent-pilot-be/agent/plan"
 	"github.com/agent-pilot/agent-pilot-be/agent/react"
+	"github.com/agent-pilot/agent-pilot-be/agent/scheduler"
 	"github.com/agent-pilot/agent-pilot-be/agent/tool"
 	"github.com/agent-pilot/agent-pilot-be/agent/tool/skill"
 	"github.com/agent-pilot/agent-pilot-be/config"
@@ -15,6 +20,7 @@ import (
 	"github.com/agent-pilot/agent-pilot-be/ioc"
 	"github.com/agent-pilot/agent-pilot-be/middleware"
 	"github.com/agent-pilot/agent-pilot-be/pkg/jwt"
+	"github.com/agent-pilot/agent-pilot-be/repository/dao"
 	"github.com/agent-pilot/agent-pilot-be/server"
 )
 
@@ -39,14 +45,23 @@ func initWebServer() *App {
 	// 构建 system prompt
 	systemMsg := chat.BuildSystemPrompt(skillReg.List())
 
-	// 创建 ADK agent
-	agent := chat.NewMainAgent(context.Background(), om.Model, systemMsg, tools)
+	mongoDB := ioc.InitMongoDatabase(conf.MongoDBUri, conf.Database)
+	agentDao := dao.NewAgentDao(mongoDB)
+	memService := memory.NewMemoryService(agentDao)
+	sch := scheduler.NewScheduler(memService)
 	planner := agentplan.NewLLMPlanner(om.Model, skillReg)
-	checkpointer := agentplan.NewMemoryCheckpointer()
-	executor := react.NewExecutor(om.Model, tools, checkpointer)
+	ctxBuilder := agentcontext.NewBuilder(agentcontext.Options{
+		SystemPrompt: systemMsg,
+		MaxMessages:  20,
+	})
+	executor := react.NewExecutor(om.Model, tools, ctxBuilder)
 
-	// 创建 chat controller
-	cc := chat.NewController(context.Background(), agent, skillReg, systemMsg, planner, checkpointer, executor)
+	schNode := nodes.NewSchedulerNode(sch)
+	plannerNode := nodes.NewPlannerNode(memService, planner, ctxBuilder)
+	executorNode := nodes.NewExecutorNode(memService, executor)
+	agentGraph := graph.NewAgentGraph(schNode, plannerNode, executorNode)
+
+	cc := chat.NewController(context.Background(), skillReg, systemMsg, memService, agentGraph)
 
 	//pkg
 	redisJWTHandler := jwt.NewRedisJWTHandler(conf.JwtConf)
